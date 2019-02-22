@@ -10,13 +10,19 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
+import android.view.View
+import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.snackbar.Snackbar
 import kotlinx.android.synthetic.main.activity_main.*
 
 
 class MainActivity : AppCompatActivity() {
     val TAG = MainActivity::class.java.simpleName
+
+    private var mSnackbar: Snackbar? = null
 
     /**
      * ConnectivityManager
@@ -57,14 +63,59 @@ class MainActivity : AppCompatActivity() {
         listeningNetwork()
     }
 
+    /**
+     * 网络不可用
+     */
+    private fun onNetUnavailable() {
+        Log.e(TAG, "onNetUnavailable")
+        if (mSnackbar == null) {
+            mSnackbar = Snackbar.make(root_view, "当前网络不可用", Snackbar.LENGTH_INDEFINITE)
+                .setAction("前往设置", View.OnClickListener {
+                    startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                })
+        }
+        if (!mSnackbar?.isShown!!) {
+            mSnackbar?.show()
+        }
+    }
+
+    /**
+     * 网络可用
+     */
+    fun onNetAvailable() {
+        Log.e(TAG, "onNetAvailable")
+        if (mSnackbar != null && mSnackbar?.isShown!!) {
+            mSnackbar?.dismiss()
+        }
+    }
+
+    @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE)
     private fun listeningNetwork() {
-        // Android 5.0 及以上，通过
+        // Android 5.0 及以上
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            tv.text = "网络不可用—NetworkCallback"
+            // 经过测试，使用 networkCallback 来监测网络状态，
+            // 如果app启动前网络可用，那么 onAvailable( ) 方法会被调用;
+            // 如果app启动前网络不可用，在app刚启动时，onLost( ) 方法却不会被调用，
+            // 所以需要我们自己来监测一下初始网络状态，如果是不可用，则执行无网需要执行的操作
+            val activeInfo = mConnectivityManager.activeNetworkInfo
+            if (activeInfo == null || !activeInfo.isConnected || !activeInfo.isAvailable) {
+                tv.text = "网络不可用—NetworkCallback"
+                onNetUnavailable()
+            }
             val request = NetworkRequest.Builder()
+                // NetworkCapabilities.NET_CAPABILITY_INTERNET 表示此网络应该能够连接到Internet
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                // NetworkCapabilities.TRANSPORT_WIFI 表示该网络使用Wi-Fi传输
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                // NetworkCapabilities.TRANSPORT_CELLULAR 表示此网络使用蜂窝传输
+                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
                 .build()
+
             mNetworkCallback = object : ConnectivityManager.NetworkCallback() {
+
+                /**
+                 * 当 framework 连接并已声明新网络可供使用时调用
+                 */
                 override fun onAvailable(network: Network) {
                     val activeInfo = mConnectivityManager.activeNetworkInfo
                     val type = activeInfo.type
@@ -79,8 +130,13 @@ class MainActivity : AppCompatActivity() {
                             tv.text = "移动网络已连接—NetworkCallback"
                         }
                     }
+
+                    onNetAvailable()
                 }
 
+                /**
+                 * 当此请求的 framework 连接到的网络更改功能，但仍满足所述需求时调用。
+                 */
                 override fun onCapabilitiesChanged(
                     network: Network,
                     networkCapabilities: NetworkCapabilities
@@ -88,12 +144,17 @@ class MainActivity : AppCompatActivity() {
                     Log.e(TAG, "onCapabilitiesChanged,NetworkCapabilities -> $networkCapabilities")
                 }
 
+                /**
+                 * 丢失网络时调用
+                 */
                 override fun onLost(network: Network) {
-                    runOnUiThread { tv.text = "网络不可用—NetworkCallback" }
+                    runOnUiThread {
+                        tv.text = "网络不可用—NetworkCallback"
+                        onNetUnavailable()
+                    }
                 }
             }
-            // 需要 android.permission.CHANGE_NETWORK_STATE
-            mConnectivityManager.requestNetwork(request, mNetworkCallback);
+            mConnectivityManager.registerNetworkCallback(request, mNetworkCallback)
         } else {
             // 注册网络状态接收者
             registerNetworkStatusReceiver()
@@ -110,7 +171,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 注册网络状态广播接收者
+     * 注册网络状态广播接收器
      */
     private fun registerNetworkStatusReceiver() {
         // 向filter中添加 ConnectivityManager.CONNECTIVITY_ACTION 以监听网络
@@ -121,8 +182,6 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(mNetWorkReceiver, intentFilter)
 
         needUnregisterReceiver = true
-
-        tv.text = "网络不可用—NetworkStatusReceiver"
     }
 
     /**
@@ -144,9 +203,11 @@ class MainActivity : AppCompatActivity() {
                         // 移动网络已连接
                         tv.text = "移动网络已连接—NetworkStatusReceiver"
                     }
+                    onNetAvailable()
                 } else {
                     // 网络不可用
                     tv.text = "网络不可用—NetworkStatusReceiver"
+                    onNetUnavailable()
                 }
             }
         }
@@ -160,6 +221,7 @@ class MainActivity : AppCompatActivity() {
                 unregisterReceiver(mNetWorkReceiver)
             }
         } else {
+            // 注销 NetworkCallback
             unregisterNetworkCallback()
         }
     }
