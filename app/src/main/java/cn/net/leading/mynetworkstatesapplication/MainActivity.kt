@@ -10,9 +10,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.util.Log
-import android.view.View
 import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.snackbar.Snackbar
@@ -22,7 +20,10 @@ import kotlinx.android.synthetic.main.activity_main.*
 class MainActivity : AppCompatActivity() {
     val TAG = MainActivity::class.java.simpleName
 
-    private var mSnackbar: Snackbar? = null
+    /**
+     * 提示网络不可用的 Snackbar
+     */
+    private var mTipNetworkUnavailableSnackbar: Snackbar? = null
 
     /**
      * ConnectivityManager
@@ -68,15 +69,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun onNetUnavailable() {
         Log.e(TAG, "onNetUnavailable")
-        if (mSnackbar == null) {
-            mSnackbar = Snackbar.make(root_view, "当前网络不可用", Snackbar.LENGTH_INDEFINITE)
-                .setAction("前往设置", View.OnClickListener {
-                    startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                })
-        }
-        if (!mSnackbar?.isShown!!) {
-            mSnackbar?.show()
-        }
+        mTipNetworkUnavailableSnackbar = SnackBarUtil.getInstance().showNoAvailableNetworkSnackBar(this)
     }
 
     /**
@@ -84,8 +77,8 @@ class MainActivity : AppCompatActivity() {
      */
     fun onNetAvailable() {
         Log.e(TAG, "onNetAvailable")
-        if (mSnackbar != null && mSnackbar?.isShown!!) {
-            mSnackbar?.dismiss()
+        if (mTipNetworkUnavailableSnackbar != null && mTipNetworkUnavailableSnackbar?.isShown!!) {
+            mTipNetworkUnavailableSnackbar?.dismiss()
         }
     }
 
